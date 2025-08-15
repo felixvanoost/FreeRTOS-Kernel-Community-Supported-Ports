@@ -47,7 +47,14 @@
 #endif
 
 extern uint32_t getSTF( void );
-extern void vApplicationSetupTimerInterrupt( void );
+
+/*
+ * Setup the timer to generate the tick interrupts.  The implementation in this
+ * file is weak to allow application writers to change the timer used to
+ * generate the tick interrupt.
+ */
+void vPortSetupTimerInterrupt( void );
+
 
 // Each task maintains a count of the critical section nesting depth.  Each
 // time a critical section is entered the count is incremented.  Each time a
@@ -81,12 +88,12 @@ StackType_t *pxPortInitialiseStack( StackType_t *pxTopOfStack, TaskFunction_t px
   pxTopOfStack[base++]  = 0xFFFF;  // AR1
   pxTopOfStack[base++]  = 0x8A08;  // ST1
   pxTopOfStack[base++]  = 0x0000;  // DP
-  pxTopOfStack[base++] = 0x0000;  // IER
-  pxTopOfStack[base++] = 0x0000;  // DBGSTAT
-  pxTopOfStack[base++] = ((uint32_t)pxCode) & 0xFFFFU;       // PCL
-  pxTopOfStack[base++] = ((uint32_t)pxCode >> 16) & 0x00FFU; // PCH
-  pxTopOfStack[base++] = 0xAAAA;  // Alignment
-  pxTopOfStack[base++] = 0xBBBB;  // Alignment
+  pxTopOfStack[base++]  = 0x0000;  // IER
+  pxTopOfStack[base++]  = 0x0000;  // DBGSTAT
+  pxTopOfStack[base++]  = ((uint32_t)pxCode) & 0xFFFFU;       // PCL
+  pxTopOfStack[base++]  = ((uint32_t)pxCode >> 16) & 0x00FFU; // PCH
+  pxTopOfStack[base++]  = 0xAAAA;  // Alignment
+  pxTopOfStack[base++]  = 0xBBBB;  // Alignment
 
   // Fill the rest of the registers with dummy values.
   for(i = 0; i < (2 * AUX_REGISTERS_TO_SAVE); i++)
@@ -137,11 +144,19 @@ void vPortEndScheduler( void )
 }
 
 //-------------------------------------------------------------------------------------------------
+void vPortSetupSWInterrupt( void )
+{
+  Interrupt_enable(PORT_INT_YIELD);
+  Interrupt_register(PORT_INT_YIELD, &portTICK_ISR);
+}
+
+//-------------------------------------------------------------------------------------------------
 // See header file for description.
 //-------------------------------------------------------------------------------------------------
 BaseType_t xPortStartScheduler(void)
 {
-  vApplicationSetupTimerInterrupt();
+  vPortSetupSWInterrupt();
+  vPortSetupTimerInterrupt();
 
   ulCriticalNesting = 0;
 
@@ -173,4 +188,40 @@ void vPortExitCritical( void )
   {
     portENABLE_INTERRUPTS();
   }
+}
+
+/*
+ * Setup CPUTIMER2 to generate the tick interrupts at the required
+ * frequency.
+ */
+#pragma WEAK( vPortSetupTimerInterrupt )
+void vPortSetupTimerInterrupt( void )
+{
+    //
+    // Initialize timer period:
+    //
+    CPUTimer_setPeriod(CPUTIMER2_BASE, configCPU_CLOCK_HZ / configTICK_RATE_HZ);
+
+    //
+    // Set pre-scale counter to divide by 1 (SYSCLKOUT):
+    //
+    CPUTimer_setPreScaler(CPUTIMER2_BASE, 0);
+	
+	  //
+    // Initializes timer control register. The timer is stopped, reloaded,
+    // free run disabled, and interrupt enabled.
+    // Additionally, the free and soft bits are set
+    //
+    CPUTimer_stopTimer(CPUTIMER2_BASE);
+    CPUTimer_reloadTimerCounter(CPUTIMER2_BASE);
+	  CPUTimer_setEmulationMode(CPUTIMER2_BASE,
+                              CPUTIMER_EMULATIONMODE_STOPAFTERNEXTDECREMENT);
+    
+	  //
+	  // Enable interrupt and start timer
+	  //
+	  CPUTimer_enableInterrupt(CPUTIMER2_BASE);
+    Interrupt_register(INT_TIMER2, &portTICK_ISR);
+    Interrupt_enable(INT_TIMER2);
+    CPUTimer_startTimer(CPUTIMER2_BASE);
 }

@@ -35,6 +35,8 @@
 //-------------------------------------------------------------------------------------------------
 // Hardware includes
 //-------------------------------------------------------------------------------------------------
+#include "portdefines.h"
+#include "cputimer.h"
 
 //-------------------------------------------------------------------------------------------------
 // Type definitions.
@@ -45,8 +47,6 @@
 #define portLONG        uint32_t
 #define portSHORT       uint16_t
 #define portBASE_TYPE   uint16_t
-#define uint8_t         uint16_t
-#define int8_t          int16_t
 #define portSTACK_TYPE  uint16_t
 
 typedef portSTACK_TYPE StackType_t;
@@ -78,8 +78,8 @@ extern void vPortExitCritical( void );
 //-------------------------------------------------------------------------------------------------
 // Task utilities.
 //-------------------------------------------------------------------------------------------------
-#define portYIELD() do{bYield = 1; __asm(" INTR INT14");}while(0)
-#define portYIELD_FROM_ISR( x )  do{if(x == pdTRUE){bYield = 1; __asm(" OR IFR, #0x2000");}}while(0)
+#define portYIELD()             {bYield = 0x1; HWREGH(PORT_PIE_O_FLAG) |= PORT_PIE_FLAG_YIELD; asm(" RPT #9 || NOP");}
+#define portYIELD_FROM_ISR( x ) {if (x != pdFALSE) portYIELD()}
 
 extern void portTICK_ISR( void );
 extern void portRESTORE_FIRST_CONTEXT( void );
